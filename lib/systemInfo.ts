@@ -1,5 +1,9 @@
 import si from 'systeminformation';
-import type { CpuData, MemData, DiskData, NetworkData, UptimeData, ProcessData, SystemMetrics } from './types';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import type { CpuData, MemData, DiskData, NetworkData, UptimeData, ProcessData, DockerContainerData, SystemMetrics } from './types';
+
+const execAsync = promisify(exec);
 
 // Cache for network stats to calculate per-second rates
 let prevNetworkStats: si.Systeminformation.NetworkStatsData[] = [];
@@ -123,14 +127,98 @@ export async function getProcessesInfo(): Promise<ProcessData[]> {
         }));
 }
 
+// Helper: parse Docker size strings like "1.5GiB", "500MiB", "1.2kB" → bytes
+function parseDockerSize(str: string): number {
+    if (!str || str === '--') return 0;
+    const match = str.trim().match(/^([\d.]+)\s*(B|kB|MB|GB|MiB|GiB|TiB|Ki?B|Mi?B|Gi?B|Ti?B)?$/i);
+    if (!match) return 0;
+    const val = parseFloat(match[1]);
+    const unit = (match[2] || 'B').toLowerCase();
+    const multipliers: Record<string, number> = {
+        b: 1,
+        kb: 1000, kib: 1024,
+        mb: 1000 ** 2, mib: 1024 ** 2,
+        gb: 1000 ** 3, gib: 1024 ** 3,
+        tb: 1000 ** 4, tib: 1024 ** 4,
+    };
+    return Math.round(val * (multipliers[unit] ?? 1));
+}
+
+export async function getDockerContainers(): Promise<DockerContainerData[]> {
+    try {
+        // Step 1: get all container IDs + names + image + status/state via docker ps
+        const { stdout: psOut } = await execAsync(
+            'docker ps -a --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.State}}"',
+            { timeout: 8000 }
+        );
+
+        const lines = psOut.trim().split('\n').filter(Boolean);
+        if (lines.length === 0) return [];
+
+        // Step 2: get stats (no-stream) only for running containers
+        const statsMap: Map<string, { cpu: number; memUsed: number; memLimit: number; memPercent: number; netRx: number; netTx: number; pids: number }> = new Map();
+
+        try {
+            const { stdout: statsOut } = await execAsync(
+                'docker stats --no-stream --format "{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.PIDs}}"',
+                { timeout: 15000 }
+            );
+
+            for (const line of statsOut.trim().split('\n').filter(Boolean)) {
+                const [sid, cpuPerc, memUsage, memPerc, netIO, pidsStr] = line.split('|');
+                const [memUsedStr, memLimitStr] = (memUsage || '').split(' / ');
+                const [netRxStr, netTxStr] = (netIO || '').split(' / ');
+
+                statsMap.set(sid.trim(), {
+                    cpu: parseFloat(cpuPerc) || 0,
+                    memUsed: parseDockerSize(memUsedStr),
+                    memLimit: parseDockerSize(memLimitStr),
+                    memPercent: parseFloat(memPerc) || 0,
+                    netRx: parseDockerSize(netRxStr),
+                    netTx: parseDockerSize(netTxStr),
+                    pids: parseInt(pidsStr) || 0,
+                });
+            }
+        } catch {
+            // docker stats may fail if no running containers — that's fine
+        }
+
+        return lines.map((line) => {
+            const [id, name, image, status, state] = line.split('|');
+            const shortId = id.trim();
+            const stats = statsMap.get(shortId) ?? {
+                cpu: 0, memUsed: 0, memLimit: 0, memPercent: 0, netRx: 0, netTx: 0, pids: 0,
+            };
+            return {
+                id: shortId,
+                name: (name || '').trim(),
+                image: (image || '').trim(),
+                status: (status || '').trim(),
+                state: (state || '').trim().toLowerCase(),
+                cpuPercent: Math.round(stats.cpu * 10) / 10,
+                memUsed: stats.memUsed,
+                memLimit: stats.memLimit,
+                memPercent: Math.round(stats.memPercent * 10) / 10,
+                netRx: stats.netRx,
+                netTx: stats.netTx,
+                pids: stats.pids,
+            };
+        });
+    } catch {
+        // Docker not installed or not accessible — return empty gracefully
+        return [];
+    }
+}
+
 export async function getAllMetrics(): Promise<SystemMetrics> {
-    const [cpu, mem, disk, network, uptime, processes] = await Promise.all([
+    const [cpu, mem, disk, network, uptime, processes, docker] = await Promise.all([
         getCpuInfo(),
         getMemInfo(),
         getDiskInfo(),
         getNetworkInfo(),
         getUptimeInfo(),
         getProcessesInfo(),
+        getDockerContainers(),
     ]);
 
     return {
@@ -140,6 +228,7 @@ export async function getAllMetrics(): Promise<SystemMetrics> {
         network,
         uptime,
         processes,
+        docker,
         timestamp: Date.now(),
     };
 }

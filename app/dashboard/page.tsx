@@ -8,6 +8,7 @@ import DiskCard from '@/components/DiskCard';
 import NetworkCard from '@/components/NetworkCard';
 import UptimeCard from '@/components/UptimeCard';
 import ProcessesCard from '@/components/ProcessesCard';
+import DockerCard from '@/components/DockerCard';
 
 const MAX_HISTORY = 30;
 const POLL_INTERVAL = 2500;
@@ -131,6 +132,11 @@ export default function DashboardPage() {
             {/* Task Manager: full width */}
             <div className="grid grid-cols-1 gap-4">
                 <ProcessesCard data={metrics.processes} />
+            </div>
+
+            {/* Docker Containers: full width */}
+            <div className="grid grid-cols-1 gap-4">
+                <DockerCard data={metrics.docker} />
             </div>
         </div>
     );
