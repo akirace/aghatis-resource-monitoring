@@ -1,0 +1,23 @@
+import { NextResponse } from 'next/server';
+import { getAllMetrics } from '@/lib/systemInfo';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export async function GET() {
+    try {
+        const metrics = await getAllMetrics();
+        return NextResponse.json(metrics, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+                'Pragma': 'no-cache',
+            },
+        });
+    } catch (error) {
+        console.error('Failed to fetch system metrics:', error);
+        return NextResponse.json(
+            { error: 'Failed to fetch system metrics' },
+            { status: 500 }
+        );
+    }
+}
