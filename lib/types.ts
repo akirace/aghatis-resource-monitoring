@@ -42,12 +42,24 @@ export interface UptimeData {
   release: string;
 }
 
+export interface ProcessData {
+  pid: number;
+  name: string;
+  cpu: number;
+  memPercent: number;
+  memBytes: number;
+  status: string;
+  user: string;
+  command: string;
+}
+
 export interface SystemMetrics {
   cpu: CpuData;
   mem: MemData;
   disk: DiskData[];
   network: NetworkData[];
   uptime: UptimeData;
+  processes: ProcessData[];
   timestamp: number;
 }
 

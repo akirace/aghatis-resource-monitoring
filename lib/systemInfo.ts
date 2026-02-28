@@ -1,5 +1,5 @@
 import si from 'systeminformation';
-import type { CpuData, MemData, DiskData, NetworkData, UptimeData, SystemMetrics } from './types';
+import type { CpuData, MemData, DiskData, NetworkData, UptimeData, ProcessData, SystemMetrics } from './types';
 
 // Cache for network stats to calculate per-second rates
 let prevNetworkStats: si.Systeminformation.NetworkStatsData[] = [];
@@ -106,13 +106,31 @@ export async function getUptimeInfo(): Promise<UptimeData> {
     };
 }
 
+export async function getProcessesInfo(): Promise<ProcessData[]> {
+    const { list } = await si.processes();
+    return list
+        .sort((a, b) => b.cpu - a.cpu)
+        .slice(0, 50)
+        .map((p) => ({
+            pid: p.pid,
+            name: p.name,
+            cpu: Math.round(p.cpu * 10) / 10,
+            memPercent: Math.round(p.mem * 10) / 10,
+            memBytes: p.memRss,
+            status: p.state || 'unknown',
+            user: p.user || '',
+            command: p.command || p.name,
+        }));
+}
+
 export async function getAllMetrics(): Promise<SystemMetrics> {
-    const [cpu, mem, disk, network, uptime] = await Promise.all([
+    const [cpu, mem, disk, network, uptime, processes] = await Promise.all([
         getCpuInfo(),
         getMemInfo(),
         getDiskInfo(),
         getNetworkInfo(),
         getUptimeInfo(),
+        getProcessesInfo(),
     ]);
 
     return {
@@ -121,6 +139,7 @@ export async function getAllMetrics(): Promise<SystemMetrics> {
         disk,
         network,
         uptime,
+        processes,
         timestamp: Date.now(),
     };
 }

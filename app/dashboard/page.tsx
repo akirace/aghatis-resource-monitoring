@@ -7,6 +7,7 @@ import RamCard from '@/components/RamCard';
 import DiskCard from '@/components/DiskCard';
 import NetworkCard from '@/components/NetworkCard';
 import UptimeCard from '@/components/UptimeCard';
+import ProcessesCard from '@/components/ProcessesCard';
 
 const MAX_HISTORY = 30;
 const POLL_INTERVAL = 2500;
@@ -125,6 +126,11 @@ export default function DashboardPage() {
             {/* Bottom row: Disk (full width) */}
             <div className="grid grid-cols-1 gap-4">
                 <DiskCard data={metrics.disk} />
+            </div>
+
+            {/* Task Manager: full width */}
+            <div className="grid grid-cols-1 gap-4">
+                <ProcessesCard data={metrics.processes} />
             </div>
         </div>
     );
